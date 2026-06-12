@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EQE 充電儀表板</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #e3e6ec;
+      --card-bg: #ffffff;
+      --card-gray: #eff1f5;
+      --primary-color: #4e73df;
+      --accent-color: #36b9cc;
+      --text-main: #2e384d;
+      --text-sub: #858796;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      padding-bottom: 50px;
+    }
+
+    .dashboard-card-gray {
+      background: var(--card-gray);
+      border-radius: 16px;
+      border: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .card-header-clean {
+      padding: 15px 20px;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      font-weight: 700;
+      color: var(--primary-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .prediction-widget {
+      background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+      color: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .prediction-widget .form-control {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+    }
+    .prediction-widget ::placeholder { color: rgba(255,255,255,0.7); }
+    .pred-result-val { font-size: 1.3rem; font-weight: bold; }
+    .pred-label { font-size: 0.8rem; opacity: 0.9; }
+
+    .stat-mini-box {
+      text-align: center;
+      padding: 10px 5px;
+      background-color: #ffffff;
+      border-radius: 10px;
+      margin-bottom: 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    .stat-val { font-size: 1rem; font-weight: 800; color: var(--text-main); }
+    .stat-unit { font-size: 0.7rem; color: #888; font-weight: normal; margin-left:2px;}
+    .stat-lbl { font-size: 0.75rem; color: var(--text-sub); }
+
+    .btn-toggle-form {
+      background: white; color: var(--primary-color);
+      border: 2px solid var(--primary-color);
+      width: 100%; border-radius: 12px; font-weight: 600;
+      padding: 10px;
+    }
+
+    .chart-container { position: relative; height: 250px; width: 100%; }
+
+    .dashboard-card-gray .form-control,
+    .dashboard-card-gray .input-group-text,
+    .dashboard-card-gray .btn-outline-secondary {
+      background-color: #ffffff;
+      border: 1px solid #ced4da;
+    }
+    .dashboard-card-gray .btn-outline-secondary:hover {
+      background-color: #e2e6ea;
+    }
+
+    .record-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      font-size: 0.85rem;
+    }
+    .record-row:last-child { border-bottom: none; }
+    .record-del {
+      color: #ff5b5b;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container" style="max-width: 600px; padding-top: 20px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-3 px-2">
+    <h4 class="fw-bold mb-0" style="color: #2e384d;">⚡ EQE 充電管家</h4>
+    <span class="badge bg-primary rounded-pill">Dashboard</span>
+  </div>
+
+  <div class="prediction-widget p-3">
+    <div class="d-flex align-items-center mb-2">
+      <span style="font-size:1.1rem; margin-right:8px;">🚀</span>
+      <span class="fw-bold">行程試算</span>
+    </div>
+    <div class="row g-2 align-items-center">
+      <div class="col-8">
+        <input type="number" id="predDist" class="form-control" placeholder="輸入預計公里數 (km)">
+      </div>
+      <div class="col-4">
+        <button class="btn btn-light w-100 fw-bold" style="color:#4e73df" onclick="predict()">計算</button>
+      </div>
+    </div>
+
+    <div id="predResult" class="row mt-3 text-center" style="display:none; border-top:1px solid rgba(255,255,255,0.2); padding-top:10px;">
+      <div class="col-4 border-end border-light">
+        <div class="pred-label">消耗電量</div>
+        <div class="pred-result-val"><span id="p_soc">-</span><span style="font-size:0.8rem">%</span></div>
+      </div>
+      <div class="col-4 border-end border-light">
+        <div class="pred-label">消耗度數</div>
+        <div class="pred-result-val"><span id="p_kwh">-</span><span style="font-size:0.8rem"> kWh</span></div>
+      </div>
+      <div class="col-4">
+        <div class="pred-label">預估費用</div>
+        <div class="pred-result-val">$<span id="p_cost">-</span></div>
+      </div>
+      <div class="col-12 mt-2" style="font-size:0.7rem; opacity:0.7;">
+        *基於選定區間平均電耗 <span id="base_eff">--</span> km/kWh 計算
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-card-gray">
+    <div class="card-header-clean">
+      <span>📊 歷史趨勢</span>
+      <small class="text-muted" style="font-weight:400; font-size:0.8rem;">區間篩選</small>
+    </div>
+    <div class="card-body">
+      <div class="input-group input-group-sm mb-3">
+        <input type="date" id="sDate" class="form-control">
+        <span class="input-group-text">-</span>
+        <input type="date" id="eDate" class="form-control">
+        <button class="btn btn-outline-primary" style="background:white;" onclick="loadCharts()">更新</button>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-3">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">里程</div>
+            <div class="stat-val"><span id="st_dist">-</span></div>
+          </div>
+        </div>
+        <div class="col-3">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">每公里</div>
+            <div class="stat-val text-success">$<span id="st_cpk">-</span></div>
+          </div>
+        </div>
+        <div class="col-3">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">電耗</div>
+            <div class="stat-val text-primary"><span id="st_eff">-</span><span class="stat-unit">km/kWh</span></div>
+          </div>
+        </div>
+        <div class="col-3">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">效率</div>
+            <div class="stat-val text-info"><span id="st_eff_soc">-</span><span class="stat-unit">km/1%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="nav nav-tabs nav-fill small mb-3" id="chartTabs">
+        <li class="nav-item">
+          <button class="nav-link active" onclick="switchChart('eff', event)">電耗走勢</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="switchChart('cost', event)">充電費用</button>
+        </li>
+      </ul>
+
+      <div class="chart-container">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-4">
+    <button class="btn btn-toggle-form" type="button" data-bs-toggle="collapse" data-bs-target="#recordForm">
+      + 新增充電紀錄
+    </button>
+
+    <div class="collapse mt-3" id="recordForm">
+      <div class="dashboard-card-gray p-3">
+        <form id="form">
+          <div class="mb-3"><label class="small text-muted">日期</label><input type="date" class="form-control" id="date"></div>
+          <div class="row mb-3">
+            <div class="col-6"><label class="small text-muted">開始 %</label><input type="number" class="form-control" id="startSoc" placeholder="20"></div>
+            <div class="col-6"><label class="small text-muted">結束 %</label><input type="number" class="form-control" id="endSoc" placeholder="80"></div>
+          </div>
+          <div class="mb-3"><label class="small text-muted">總里程 (ODO)</label><input type="number" class="form-control" id="odometer"></div>
+          <div class="mb-3"><label class="small text-muted">充電度數 (kWh)</label><input type="number" step="0.1" class="form-control" id="kwh"></div>
+          <div class="mb-3">
+            <label class="small text-muted">總費用 ($)</label>
+            <div class="input-group">
+              <input type="number" class="form-control" id="totalCost">
+              <button type="button" class="btn btn-outline-secondary" onclick="calc(0)">免</button>
+              <button type="button" class="btn btn-outline-secondary" onclick="calc(4.56)">4.5</button>
+              <button type="button" class="btn btn-outline-secondary" onclick="calc(8.0)">8.0</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary w-100 py-2 rounded-3" onclick="submitData()">儲存紀錄</button>
+          <div id="loader" class="text-center mt-2 small text-muted" style="display:none;">處理中...</div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-card-gray">
+    <div class="card-header-clean">
+      <span>🗒 充電紀錄</span>
+      <small class="text-muted" style="font-weight:400; font-size:0.8rem;" id="recordCount"></small>
+    </div>
+    <div class="card-body" id="recordList">
+      <div class="text-muted small text-center">尚無紀錄</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const STORAGE_KEY = 'eqe_charging_records';
+
+  document.getElementById('date').valueAsDate = new Date();
+
+  var today = new Date();
+  var lastMonth = new Date();
+  lastMonth.setDate(today.getDate() - 30);
+  document.getElementById('sDate').valueAsDate = lastMonth;
+  document.getElementById('eDate').valueAsDate = today;
+
+  var chartInstance = null;
+  var fetchedData = null;
+  var currentAvg = { kwh: 0, price: 0, soc: 0 };
+
+  window.onload = function() {
+    renderRecordList();
+    loadCharts();
+  };
+
+  function getRecords() {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function saveRecords(records) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  }
+
+  function calc(price) {
+    var k = parseFloat(document.getElementById('kwh').value);
+    if(k) document.getElementById('totalCost').value = Math.round(k * price);
+  }
+
+  // Mirrors Code.gs processForm()
+  function processForm(data) {
+    try {
+      var records = getRecords();
+      var previousOdo = 0;
+      if (records.length > 0) {
+        previousOdo = records[records.length - 1].odometer;
+      }
+
+      var date = data.date;
+      var startSoc = parseFloat(data.startSoc);
+      var endSoc = parseFloat(data.endSoc);
+      var odometer = parseFloat(data.odometer);
+      var kwh = parseFloat(data.kwh);
+      var totalCost = Math.round(parseFloat(data.totalCost));
+
+      var chargedSoc = endSoc - startSoc;
+      var unitPrice = (kwh > 0) ? (totalCost / kwh) : 0;
+      var distance = (records.length > 0) ? (odometer - previousOdo) : 0;
+      var kmPerKwh = (kwh > 0) ? (distance / kwh) : 0;
+      var kmPerSoc = (chargedSoc > 0) ? (distance / chargedSoc) : 0;
+
+      records.push({
+        date: date,
+        startSoc: startSoc,
+        endSoc: endSoc,
+        odometer: odometer,
+        unitPrice: parseFloat(unitPrice.toFixed(2)),
+        chargedSoc: chargedSoc,
+        kwh: kwh,
+        totalCost: totalCost,
+        distance: distance,
+        kmPerKwh: parseFloat(kmPerKwh.toFixed(2)),
+        kmPerSoc: parseFloat(kmPerSoc.toFixed(2))
+      });
+
+      saveRecords(records);
+
+      return {
+        success: true,
+        results: {
+          unitPrice: unitPrice.toFixed(2),
+          distance: distance,
+          kmPerKwh: kmPerKwh.toFixed(2),
+          kmPerSoc: kmPerSoc.toFixed(2)
+        }
+      };
+    } catch (e) {
+      return { success: false, error: e.toString() };
+    }
+  }
+
+  // Mirrors Code.gs getChartData()
+  function getChartData(s, e) {
+    var start = new Date(s);
+    var end = new Date(e);
+    end.setHours(23, 59, 59);
+
+    var records = getRecords();
+    var filtered = records.filter(function(r) {
+      var d = new Date(r.date);
+      return d >= start && d <= end;
+    });
+
+    if (filtered.length === 0) return null;
+
+    var labels = [];
+    var dataEff = [];
+    var dataCost = [];
+    var sum = { dist: 0, kwh: 0, cost: 0, soc: 0 };
+
+    filtered.forEach(function(r) {
+      var dObj = new Date(r.date);
+      var dStr = (dObj.getMonth() + 1) + "/" + dObj.getDate();
+
+      labels.push(dStr);
+      dataEff.push(parseFloat((r.kmPerKwh || 0).toFixed ? r.kmPerKwh.toFixed(2) : r.kmPerKwh));
+      dataCost.push(Math.round(r.totalCost || 0));
+
+      sum.dist += (r.distance || 0);
+      sum.kwh += (r.kwh || 0);
+      sum.cost += (r.totalCost || 0);
+      sum.soc += (r.chargedSoc || 0);
+    });
+
+    var avgKmKwh = (sum.kwh > 0) ? (sum.dist / sum.kwh) : 0;
+    var avgKmSoc = (sum.soc > 0) ? (sum.dist / sum.soc) : 0;
+    var avgPrice = (sum.kwh > 0) ? (sum.cost / sum.kwh) : 0;
+    var avgCostPerKm = (sum.dist > 0) ? (sum.cost / sum.dist) : 0;
+    var avgCostPerSession = (filtered.length > 0) ? (sum.cost / filtered.length) : 0;
+
+    return {
+      chart: {
+        labels: labels,
+        efficiency: dataEff,
+        cost: dataCost
+      },
+      stats: {
+        totalDist: sum.dist.toFixed(0),
+        totalCost: Math.round(sum.cost),
+        avgKmKwh: avgKmKwh.toFixed(2),
+        avgKmSoc: avgKmSoc.toFixed(2),
+        avgPrice: avgPrice.toFixed(2),
+        avgCostPerKm: avgCostPerKm.toFixed(2),
+        avgCostPerSession: Math.round(avgCostPerSession)
+      }
+    };
+  }
+
+  function submitData() {
+    var d = {
+      date: document.getElementById('date').value,
+      startSoc: document.getElementById('startSoc').value,
+      endSoc: document.getElementById('endSoc').value,
+      odometer: document.getElementById('odometer').value,
+      kwh: document.getElementById('kwh').value,
+      totalCost: document.getElementById('totalCost').value
+    };
+    if(!d.date || !d.odometer || !d.kwh || d.totalCost==="") { alert("請填寫完整"); return; }
+
+    document.getElementById('loader').style.display='block';
+
+    setTimeout(function() {
+      var r = processForm(d);
+      document.getElementById('loader').style.display='none';
+      if(r.success) {
+        alert("✅ 儲存成功！\n本次電耗: " + r.results.kmPerKwh + " km/kWh");
+        document.getElementById('form').reset();
+        document.getElementById('date').valueAsDate = new Date();
+        renderRecordList();
+        loadCharts();
+      } else {
+        alert("錯誤: "+r.error);
+      }
+    }, 150);
+  }
+
+  function loadCharts() {
+    var s = document.getElementById('sDate').value;
+    var e = document.getElementById('eDate').value;
+    if(!s || !e) return;
+
+    var r = getChartData(s, e);
+    if(r) {
+      fetchedData = r;
+
+      document.getElementById('st_dist').innerText = r.stats.totalDist;
+      document.getElementById('st_cpk').innerText = r.stats.avgCostPerKm;
+
+      document.getElementById('st_eff').innerText = r.stats.avgKmKwh;
+      document.getElementById('st_eff_soc').innerText = r.stats.avgKmSoc;
+
+      currentAvg.kwh = parseFloat(r.stats.avgKmKwh);
+      currentAvg.soc = parseFloat(r.stats.avgKmSoc);
+      currentAvg.price = parseFloat(r.stats.avgPrice);
+      document.getElementById('base_eff').innerText = r.stats.avgKmKwh;
+
+      drawChart('eff');
+    } else {
+      fetchedData = null;
+      if(chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      document.getElementById('st_dist').innerText = '-';
+      document.getElementById('st_cpk').innerText = '-';
+      document.getElementById('st_eff').innerText = '-';
+      document.getElementById('st_eff_soc').innerText = '-';
+      alert("此區間無資料");
+    }
+  }
+
+  function switchChart(type, evt) {
+    var tabs = document.querySelectorAll('.nav-link');
+    tabs.forEach(t => t.classList.remove('active'));
+    evt.target.classList.add('active');
+    drawChart(type);
+  }
+
+  function drawChart(type) {
+    if(!fetchedData) return;
+    var ctx = document.getElementById('mainChart').getContext('2d');
+    if(chartInstance) chartInstance.destroy();
+
+    var avgValue = 0;
+    var labels = fetchedData.chart.labels;
+    var avgData = [];
+    var mainData = [];
+    var mainLabel = "";
+    var chartType = "";
+    var mainColor = "";
+
+    if(type === 'eff') {
+      avgValue = parseFloat(fetchedData.stats.avgKmKwh);
+      mainData = fetchedData.chart.efficiency;
+      mainLabel = '電耗 (km/kWh)';
+      chartType = 'line';
+      mainColor = '#4e73df';
+    } else {
+      avgValue = parseFloat(fetchedData.stats.avgCostPerSession);
+      mainData = fetchedData.chart.cost;
+      mainLabel = '費用 ($)';
+      chartType = 'bar';
+      mainColor = '#36b9cc';
+    }
+
+    avgData = new Array(labels.length).fill(avgValue);
+
+    var config = {
+      type: chartType,
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: mainLabel,
+            data: mainData,
+            backgroundColor: type === 'eff' ? 'rgba(78, 115, 223, 0.1)' : mainColor,
+            borderColor: mainColor,
+            borderWidth: type === 'eff' ? 2 : 0,
+            borderRadius: type === 'cost' ? 50 : 0,
+            barPercentage: 0.6,
+            tension: 0.3,
+            fill: type === 'eff',
+            order: 2
+          },
+          {
+            type: 'line',
+            label: '區間平均',
+            data: avgData,
+            borderColor: '#ff5b5b',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: false,
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                var label = context.dataset.label || '';
+                if (label) label += ': ';
+
+                if (context.parsed.y !== null) {
+                  if (type === 'eff') {
+                    label += context.parsed.y.toFixed(2) + ' km/kWh';
+                  } else {
+                    label += Math.round(context.parsed.y);
+                  }
+                }
+                return label;
+              }
+            }
+          }
+        },
+        scales: {
+           y: {
+             beginAtZero: type === 'cost',
+             grid: { borderDash: [2, 4] }
+           },
+           x: {
+             grid: { display: false }
+           }
+        }
+      }
+    };
+
+    chartInstance = new Chart(ctx, config);
+  }
+
+  function predict() {
+    var dist = parseFloat(document.getElementById('predDist').value);
+    if(!dist) { alert("請輸入公里數"); return; }
+    if(currentAvg.kwh === 0) { alert("請先更新圖表以獲取計算基準"); return; }
+
+    var needSoc = dist / currentAvg.soc;
+    var needKwh = dist / currentAvg.kwh;
+    var estCost = needKwh * currentAvg.price;
+
+    document.getElementById('p_soc').innerText = needSoc.toFixed(1);
+    document.getElementById('p_kwh').innerText = needKwh.toFixed(1);
+    document.getElementById('p_cost').innerText = Math.round(estCost);
+
+    document.getElementById('predResult').style.display = 'flex';
+  }
+
+  function renderRecordList() {
+    var records = getRecords();
+    var list = document.getElementById('recordList');
+    var count = document.getElementById('recordCount');
+    count.innerText = records.length + ' 筆';
+
+    if(records.length === 0) {
+      list.innerHTML = '<div class="text-muted small text-center">尚無紀錄</div>';
+      return;
+    }
+
+    var html = '';
+    for(var i = records.length - 1; i >= 0; i--) {
+      var r = records[i];
+      html += '<div class="record-row">' +
+        '<div>' +
+          '<strong>' + r.date + '</strong> · ' + r.startSoc + '% → ' + r.endSoc + '% · ' +
+          r.kwh + ' kWh · $' + r.totalCost +
+          '<br><span class="text-muted">ODO ' + r.odometer + ' · 行駛 ' + r.distance + ' km · ' +
+          r.kmPerKwh + ' km/kWh</span>' +
+        '</div>' +
+        '<span class="record-del" onclick="deleteRecord(' + i + ')">刪除</span>' +
+      '</div>';
+    }
+    list.innerHTML = html;
+  }
+
+  function deleteRecord(index) {
+    if(!confirm('確定要刪除這筆紀錄嗎？')) return;
+    var records = getRecords();
+    records.splice(index, 1);
+    saveRecords(records);
+    renderRecordList();
+    loadCharts();
+  }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
