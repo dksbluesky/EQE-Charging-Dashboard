@@ -237,14 +237,16 @@
   </div>
 
   <div class="dashboard-card-gray">
-    <div class="card-header-clean">
+    <div class="card-header-clean" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#recordListCollapse">
       <span>🗒 充電紀錄</span>
       <small class="text-muted" style="font-weight:400; font-size:0.8rem;" id="recordCount"></small>
     </div>
-    <div class="card-body">
-      <div id="importBar" class="mb-2"></div>
-      <div id="recordList">
-        <div class="text-muted small text-center">尚無紀錄</div>
+    <div class="collapse" id="recordListCollapse">
+      <div class="card-body">
+        <div id="importBar" class="mb-2"></div>
+        <div id="recordList">
+          <div class="text-muted small text-center">尚無紀錄</div>
+        </div>
       </div>
     </div>
   </div>
