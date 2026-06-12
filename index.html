@@ -268,7 +268,7 @@
 
   window.onload = function() {
     renderRecordList();
-    loadCharts();
+    loadCharts(true);
   };
 
   function getRecords() {
@@ -422,7 +422,7 @@
     }, 150);
   }
 
-  function loadCharts() {
+  function loadCharts(silent) {
     var s = document.getElementById('sDate').value;
     var e = document.getElementById('eDate').value;
     if(!s || !e) return;
@@ -450,7 +450,7 @@
       document.getElementById('st_cpk').innerText = '-';
       document.getElementById('st_eff').innerText = '-';
       document.getElementById('st_eff_soc').innerText = '-';
-      alert("此區間無資料");
+      if(!silent) alert("此區間無資料");
     }
   }
 
