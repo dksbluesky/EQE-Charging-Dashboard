@@ -1,0 +1,24 @@
+{
+  "name": "EQE 充電儀表板",
+  "short_name": "EQE充電",
+  "description": "EV charging session tracker and efficiency dashboard",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e3e6ec",
+  "theme_color": "#4e73df",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

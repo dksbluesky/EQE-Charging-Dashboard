@@ -4,6 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>🚗EQE 充電儀表板</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4e73df">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="seed-data.js"></script>
@@ -106,6 +112,12 @@
       cursor: pointer;
       font-size: 0.8rem;
     }
+    .record-edit {
+      color: var(--primary-color);
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
@@ -206,7 +218,7 @@
   </div>
 
   <div class="mb-4">
-    <button class="btn btn-toggle-form" type="button" data-bs-toggle="collapse" data-bs-target="#recordForm">
+    <button class="btn btn-toggle-form" type="button" id="formToggleBtn" data-bs-toggle="collapse" data-bs-target="#recordForm">
       + 新增充電紀錄
     </button>
 
@@ -229,7 +241,8 @@
               <button type="button" class="btn btn-outline-secondary" onclick="calc(8.0)">8.0</button>
             </div>
           </div>
-          <button type="button" class="btn btn-primary w-100 py-2 rounded-3" onclick="submitData()">儲存紀錄</button>
+          <button type="button" class="btn btn-primary w-100 py-2 rounded-3" id="submitBtn" onclick="submitData()">儲存紀錄</button>
+          <button type="button" class="btn btn-outline-secondary w-100 mt-2 rounded-3" id="cancelEditBtn" style="display:none;" onclick="cancelEdit()">取消編輯</button>
           <div id="loader" class="text-center mt-2 small text-muted" style="display:none;">處理中...</div>
         </form>
       </div>
@@ -243,6 +256,15 @@
     </div>
     <div class="collapse" id="recordListCollapse">
       <div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <button class="btn btn-sm btn-outline-secondary w-100" onclick="exportBackup()">💾 匯出備份</button>
+          </div>
+          <div class="col-6">
+            <button class="btn btn-sm btn-outline-secondary w-100" onclick="document.getElementById('importFile').click()">📂 匯入備份</button>
+            <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackup(event)">
+          </div>
+        </div>
         <div id="importBar" class="mb-2"></div>
         <div id="recordList">
           <div class="text-muted small text-center">尚無紀錄</div>
@@ -255,6 +277,7 @@
 
 <script>
   const STORAGE_KEY = 'eqe_charging_records';
+  const SEED_IMPORTED_KEY = 'eqe_seed_imported';
 
   document.getElementById('date').valueAsDate = new Date();
 
@@ -267,6 +290,7 @@
   var chartInstance = null;
   var fetchedData = null;
   var currentAvg = { kwh: 0, price: 0, soc: 0 };
+  var editIndex = null;
 
   window.onload = function() {
     renderRecordList();
@@ -282,6 +306,23 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   }
 
+  // Sorts by date and recomputes distance/efficiency fields sequentially,
+  // since each record's distance depends on the previous record's odometer.
+  function recalcRecords(records) {
+    records.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      var previousOdo = i > 0 ? records[i - 1].odometer : 0;
+
+      r.chargedSoc = r.endSoc - r.startSoc;
+      r.unitPrice = parseFloat(((r.kwh > 0) ? (r.totalCost / r.kwh) : 0).toFixed(2));
+      r.distance = i > 0 ? (r.odometer - previousOdo) : 0;
+      r.kmPerKwh = parseFloat(((r.kwh > 0) ? (r.distance / r.kwh) : 0).toFixed(2));
+      r.kmPerSoc = parseFloat(((r.chargedSoc > 0) ? (r.distance / r.chargedSoc) : 0).toFixed(2));
+    }
+    return records;
+  }
+
   function calc(price) {
     var k = parseFloat(document.getElementById('kwh').value);
     if(k) document.getElementById('totalCost').value = Math.round(k * price);
@@ -291,49 +332,51 @@
   function processForm(data) {
     try {
       var records = getRecords();
-      var previousOdo = 0;
-      if (records.length > 0) {
-        previousOdo = records[records.length - 1].odometer;
-      }
 
-      var date = data.date;
-      var startSoc = parseFloat(data.startSoc);
-      var endSoc = parseFloat(data.endSoc);
-      var odometer = parseFloat(data.odometer);
-      var kwh = parseFloat(data.kwh);
-      var totalCost = Math.round(parseFloat(data.totalCost));
+      var newRecord = {
+        date: data.date,
+        startSoc: parseFloat(data.startSoc),
+        endSoc: parseFloat(data.endSoc),
+        odometer: parseFloat(data.odometer),
+        kwh: parseFloat(data.kwh),
+        totalCost: Math.round(parseFloat(data.totalCost)),
+        unitPrice: 0, chargedSoc: 0, distance: 0, kmPerKwh: 0, kmPerSoc: 0
+      };
 
-      var chargedSoc = endSoc - startSoc;
-      var unitPrice = (kwh > 0) ? (totalCost / kwh) : 0;
-      var distance = (records.length > 0) ? (odometer - previousOdo) : 0;
-      var kmPerKwh = (kwh > 0) ? (distance / kwh) : 0;
-      var kmPerSoc = (chargedSoc > 0) ? (distance / chargedSoc) : 0;
-
-      records.push({
-        date: date,
-        startSoc: startSoc,
-        endSoc: endSoc,
-        odometer: odometer,
-        unitPrice: parseFloat(unitPrice.toFixed(2)),
-        chargedSoc: chargedSoc,
-        kwh: kwh,
-        totalCost: totalCost,
-        distance: distance,
-        kmPerKwh: parseFloat(kmPerKwh.toFixed(2)),
-        kmPerSoc: parseFloat(kmPerSoc.toFixed(2))
-      });
-
+      records.push(newRecord);
+      recalcRecords(records);
       saveRecords(records);
 
       return {
         success: true,
         results: {
-          unitPrice: unitPrice.toFixed(2),
-          distance: distance,
-          kmPerKwh: kmPerKwh.toFixed(2),
-          kmPerSoc: kmPerSoc.toFixed(2)
+          unitPrice: newRecord.unitPrice.toFixed(2),
+          distance: newRecord.distance,
+          kmPerKwh: newRecord.kmPerKwh.toFixed(2),
+          kmPerSoc: newRecord.kmPerSoc.toFixed(2)
         }
       };
+    } catch (e) {
+      return { success: false, error: e.toString() };
+    }
+  }
+
+  // Updates an existing record's editable fields and recomputes derived fields for all records.
+  function updateRecord(index, data) {
+    try {
+      var records = getRecords();
+      var r = records[index];
+      r.date = data.date;
+      r.startSoc = parseFloat(data.startSoc);
+      r.endSoc = parseFloat(data.endSoc);
+      r.odometer = parseFloat(data.odometer);
+      r.kwh = parseFloat(data.kwh);
+      r.totalCost = Math.round(parseFloat(data.totalCost));
+
+      recalcRecords(records);
+      saveRecords(records);
+
+      return { success: true };
     } catch (e) {
       return { success: false, error: e.toString() };
     }
@@ -410,6 +453,20 @@
     document.getElementById('loader').style.display='block';
 
     setTimeout(function() {
+      if(editIndex !== null) {
+        var ur = updateRecord(editIndex, d);
+        document.getElementById('loader').style.display='none';
+        if(ur.success) {
+          alert("✅ 已更新紀錄");
+          cancelEdit();
+          renderRecordList();
+          loadCharts();
+        } else {
+          alert("錯誤: "+ur.error);
+        }
+        return;
+      }
+
       var r = processForm(d);
       document.getElementById('loader').style.display='none';
       if(r.success) {
@@ -422,6 +479,36 @@
         alert("錯誤: "+r.error);
       }
     }, 150);
+  }
+
+  function editRecord(index) {
+    var r = getRecords()[index];
+    editIndex = index;
+
+    document.getElementById('date').value = r.date;
+    document.getElementById('startSoc').value = r.startSoc;
+    document.getElementById('endSoc').value = r.endSoc;
+    document.getElementById('odometer').value = r.odometer;
+    document.getElementById('kwh').value = r.kwh;
+    document.getElementById('totalCost').value = r.totalCost;
+
+    document.getElementById('formToggleBtn').innerText = '✏️ 編輯充電紀錄';
+    document.getElementById('submitBtn').innerText = '更新紀錄';
+    document.getElementById('cancelEditBtn').style.display = 'block';
+
+    new bootstrap.Collapse(document.getElementById('recordForm'), { show: true });
+    new bootstrap.Collapse(document.getElementById('recordListCollapse'), { hide: true });
+    document.getElementById('recordForm').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function cancelEdit() {
+    editIndex = null;
+    document.getElementById('form').reset();
+    document.getElementById('date').valueAsDate = new Date();
+    document.getElementById('formToggleBtn').innerText = '+ 新增充電紀錄';
+    document.getElementById('submitBtn').innerText = '儲存紀錄';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    new bootstrap.Collapse(document.getElementById('recordForm'), { hide: true });
   }
 
   function loadCharts(silent) {
@@ -581,6 +668,57 @@
     document.getElementById('predResult').style.display = 'flex';
   }
 
+  function exportBackup() {
+    var records = getRecords();
+    var blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = 'eqe-charging-backup-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importBackup(evt) {
+    var file = evt.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var imported;
+      try {
+        imported = JSON.parse(e.target.result);
+        if(!Array.isArray(imported)) throw new Error('格式錯誤');
+      } catch(err) {
+        alert('讀取失敗: ' + err.message);
+        evt.target.value = '';
+        return;
+      }
+
+      var records = getRecords();
+      var mode = 'replace';
+      if(records.length > 0) {
+        mode = confirm('目前已有 ' + records.length + ' 筆紀錄。\n按「確定」取代全部，按「取消」改為附加並依日期排序。') ? 'replace' : 'append';
+      }
+
+      if(mode === 'replace') {
+        records = imported;
+      } else {
+        records = records.concat(imported);
+      }
+
+      recalcRecords(records);
+      saveRecords(records);
+      renderRecordList();
+      loadCharts();
+      alert('匯入完成！共 ' + records.length + ' 筆紀錄');
+      evt.target.value = '';
+    };
+    reader.readAsText(file);
+  }
+
   function importSeedData() {
     if(typeof window.SEED_DATA === 'undefined') { alert('找不到歷史資料檔'); return; }
     var records = getRecords();
@@ -590,8 +728,9 @@
       if(!confirm('匯入 ' + window.SEED_DATA.length + ' 筆歷史紀錄？')) return;
     }
     records = records.concat(window.SEED_DATA);
-    records.sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+    recalcRecords(records);
     saveRecords(records);
+    localStorage.setItem(SEED_IMPORTED_KEY, '1');
     renderRecordList();
     loadCharts();
     alert('匯入完成！共 ' + records.length + ' 筆紀錄');
@@ -599,7 +738,7 @@
 
   function renderImportBar() {
     var bar = document.getElementById('importBar');
-    if(typeof window.SEED_DATA === 'undefined') { bar.innerHTML = ''; return; }
+    if(typeof window.SEED_DATA === 'undefined' || localStorage.getItem(SEED_IMPORTED_KEY)) { bar.innerHTML = ''; return; }
     bar.innerHTML = '<button class="btn btn-sm btn-outline-primary w-100" onclick="importSeedData()">匯入歷史紀錄 (' + window.SEED_DATA.length + ' 筆)</button>';
   }
 
@@ -625,7 +764,10 @@
           '<br><span class="text-muted">ODO ' + r.odometer + ' · 行駛 ' + r.distance + ' km · ' +
           r.kmPerKwh + ' km/kWh</span>' +
         '</div>' +
-        '<span class="record-del" onclick="deleteRecord(' + i + ')">刪除</span>' +
+        '<div class="text-end">' +
+          '<div class="record-edit" onclick="editRecord(' + i + ')">編輯</div>' +
+          '<div class="record-del" onclick="deleteRecord(' + i + ')">刪除</div>' +
+        '</div>' +
       '</div>';
     }
     list.innerHTML = html;
@@ -635,9 +777,16 @@
     if(!confirm('確定要刪除這筆紀錄嗎？')) return;
     var records = getRecords();
     records.splice(index, 1);
+    recalcRecords(records);
     saveRecords(records);
     renderRecordList();
     loadCharts();
+  }
+
+  if('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function() {});
+    });
   }
 </script>
 
