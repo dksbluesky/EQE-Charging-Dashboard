@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eqe-charging-v1';
+const CACHE_NAME = 'eqe-charging-v2';
 const ASSETS = [
   './',
   './index.html',

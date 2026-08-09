@@ -223,10 +223,40 @@
         <li class="nav-item">
           <button class="nav-link" onclick="switchChart('cost', event)">充電費用</button>
         </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="switchChart('avg', event)">平均支出</button>
+        </li>
       </ul>
 
-      <div class="chart-container">
+      <div class="chart-container" id="mainChartContainer">
         <canvas id="mainChart"></canvas>
+      </div>
+
+      <div id="averagePanel" class="d-none">
+        <div class="d-flex justify-content-between align-items-end mb-3">
+          <div>
+            <label class="small text-muted mb-1" for="avgPeriod">平均方式</label>
+            <select id="avgPeriod" class="form-select form-select-sm" onchange="updatePeriodAverages()">
+              <option value="day">日平均</option>
+              <option value="month">月平均</option>
+            </select>
+          </div>
+          <small id="pcSyncStatus" class="text-muted text-end"></small>
+        </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="stat-mini-box">
+              <div class="stat-lbl" id="st_avg_kwh_label">日均充電度數</div>
+              <div class="stat-val text-primary"><span id="st_avg_kwh">-</span><span class="stat-unit">kWh</span></div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="stat-mini-box">
+              <div class="stat-lbl" id="st_avg_cost_label">日均費用</div>
+              <div class="stat-val text-success">$<span id="st_avg_cost">-</span></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -304,9 +334,12 @@
   var chartInstance = null;
   var fetchedData = null;
   var currentAvg = { kwh: 0, price: 0, soc: 0 };
+  var periodAverages = null;
+  var activeDashboardView = 'eff';
   var editIndex = null;
 
-  window.onload = function() {
+  window.onload = async function() {
+    await refreshPcLocalData();
     renderRecordList();
     loadCharts(true);
   };
@@ -318,6 +351,45 @@
 
   function saveRecords(records) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  }
+  function isPcLocalServer() {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  }
+
+  async function refreshPcLocalData() {
+    if(!isPcLocalServer()) return;
+
+    var status = document.getElementById('pcSyncStatus');
+    try {
+      var response = await fetch('/api/records', { cache: 'no-store' });
+      if(!response.ok) throw new Error('本機資料服務無回應');
+
+      var payload = await response.json();
+      if(!payload || !Array.isArray(payload.records)) throw new Error('原始資料格式錯誤');
+
+      var records = recalcRecords(payload.records);
+      saveRecords(records);
+      status.innerText = 'PC 已同步 ' + records.length + ' 筆原始資料';
+    } catch(error) {
+      status.innerText = 'PC 原始資料未同步';
+      console.warn('PC raw-data refresh failed:', error);
+    }
+  }
+
+  function updatePeriodAverages() {
+    var mode = document.getElementById('avgPeriod').value;
+    var isMonth = mode === 'month';
+    document.getElementById('st_avg_kwh_label').innerText = isMonth ? '月均充電度數' : '日均充電度數';
+    document.getElementById('st_avg_cost_label').innerText = isMonth ? '月均費用' : '日均費用';
+
+    if(!periodAverages) {
+      document.getElementById('st_avg_kwh').innerText = '-';
+      document.getElementById('st_avg_cost').innerText = '-';
+      return;
+    }
+
+    document.getElementById('st_avg_kwh').innerText = isMonth ? periodAverages.avgMonthlyKwh : periodAverages.avgDailyKwh;
+    document.getElementById('st_avg_cost').innerText = isMonth ? periodAverages.avgMonthlyCost : periodAverages.avgDailyCost;
   }
 
   // Sorts by date and recomputes distance/efficiency fields sequentially,
@@ -434,6 +506,8 @@
     var avgPrice = (sum.kwh > 0) ? (sum.cost / sum.kwh) : 0;
     var avgCostPerKm = (sum.dist > 0) ? (sum.cost / sum.dist) : 0;
     var avgCostPerSession = (filtered.length > 0) ? (sum.cost / filtered.length) : 0;
+    var calendarDays = Math.floor((Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) - Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000) + 1;
+    var calendarMonths = ((end.getFullYear() - start.getFullYear()) * 12) + end.getMonth() - start.getMonth() + 1;
 
     return {
       chart: {
@@ -449,7 +523,11 @@
         avgKmSoc: avgKmSoc.toFixed(2),
         avgPrice: avgPrice.toFixed(2),
         avgCostPerKm: avgCostPerKm.toFixed(2),
-        avgCostPerSession: Math.round(avgCostPerSession)
+        avgCostPerSession: Math.round(avgCostPerSession),
+        avgDailyKwh: (sum.kwh / calendarDays).toFixed(1),
+        avgDailyCost: Math.round(sum.cost / calendarDays),
+        avgMonthlyKwh: (sum.kwh / calendarMonths).toFixed(1),
+        avgMonthlyCost: Math.round(sum.cost / calendarMonths)
       }
     };
   }
@@ -534,11 +612,13 @@
     var r = getChartData(s, e);
     if(r) {
       fetchedData = r;
+      periodAverages = r.stats;
 
       document.getElementById('st_dist').innerText = r.stats.totalDist;
       document.getElementById('st_cpk').innerText = r.stats.avgCostPerKm;
       document.getElementById('st_total_kwh').innerText = r.stats.totalKwh;
       document.getElementById('st_total_cost').innerText = r.stats.totalCost;
+      updatePeriodAverages();
 
       document.getElementById('st_eff').innerText = r.stats.avgKmKwh;
       document.getElementById('st_eff_soc').innerText = r.stats.avgKmSoc;
@@ -548,9 +628,11 @@
       currentAvg.price = parseFloat(r.stats.avgPrice);
       document.getElementById('base_eff').innerText = r.stats.avgKmKwh;
 
-      drawChart('eff');
+      renderDashboardView();
     } else {
       fetchedData = null;
+      periodAverages = null;
+      updatePeriodAverages();
       if(chartInstance) { chartInstance.destroy(); chartInstance = null; }
       document.getElementById('st_dist').innerText = '-';
       document.getElementById('st_cpk').innerText = '-';
@@ -563,12 +645,28 @@
   }
 
   function switchChart(type, evt) {
-    var tabs = document.querySelectorAll('.nav-link');
+    var tabs = document.querySelectorAll('#chartTabs .nav-link');
     tabs.forEach(t => t.classList.remove('active'));
     evt.target.classList.add('active');
-    drawChart(type);
+    activeDashboardView = type;
+    renderDashboardView();
   }
 
+  function renderDashboardView() {
+    var chartContainer = document.getElementById('mainChartContainer');
+    var averagePanel = document.getElementById('averagePanel');
+
+    if(activeDashboardView === 'avg') {
+      chartContainer.classList.add('d-none');
+      averagePanel.classList.remove('d-none');
+      updatePeriodAverages();
+      return;
+    }
+
+    averagePanel.classList.add('d-none');
+    chartContainer.classList.remove('d-none');
+    drawChart(activeDashboardView);
+  }
   function drawChart(type) {
     if(!fetchedData) return;
     var ctx = document.getElementById('mainChart').getContext('2d');
