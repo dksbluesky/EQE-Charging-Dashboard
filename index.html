@@ -202,6 +202,20 @@
         </div>
       </div>
 
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">總充電度數</div>
+            <div class="stat-val text-primary"><span id="st_total_kwh">-</span><span class="stat-unit">kWh</span></div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="stat-mini-box">
+            <div class="stat-lbl">總費用</div>
+            <div class="stat-val text-success">$<span id="st_total_cost">-</span></div>
+          </div>
+        </div>
+      </div>
       <ul class="nav nav-tabs nav-fill small mb-3" id="chartTabs">
         <li class="nav-item">
           <button class="nav-link active" onclick="switchChart('eff', event)">電耗走勢</button>
@@ -429,6 +443,7 @@
       },
       stats: {
         totalDist: sum.dist.toFixed(0),
+        totalKwh: sum.kwh.toFixed(1),
         totalCost: Math.round(sum.cost),
         avgKmKwh: avgKmKwh.toFixed(2),
         avgKmSoc: avgKmSoc.toFixed(2),
@@ -522,6 +537,8 @@
 
       document.getElementById('st_dist').innerText = r.stats.totalDist;
       document.getElementById('st_cpk').innerText = r.stats.avgCostPerKm;
+      document.getElementById('st_total_kwh').innerText = r.stats.totalKwh;
+      document.getElementById('st_total_cost').innerText = r.stats.totalCost;
 
       document.getElementById('st_eff').innerText = r.stats.avgKmKwh;
       document.getElementById('st_eff_soc').innerText = r.stats.avgKmSoc;
@@ -537,6 +554,8 @@
       if(chartInstance) { chartInstance.destroy(); chartInstance = null; }
       document.getElementById('st_dist').innerText = '-';
       document.getElementById('st_cpk').innerText = '-';
+      document.getElementById('st_total_kwh').innerText = '-';
+      document.getElementById('st_total_cost').innerText = '-';
       document.getElementById('st_eff').innerText = '-';
       document.getElementById('st_eff_soc').innerText = '-';
       if(!silent) alert("此區間無資料");
