@@ -12,7 +12,15 @@ A standalone web app for tracking EV charging sessions, recreated from a Google 
 
 ## Data storage
 
-All data is stored in the browser's `localStorage` (key: `eqe_charging_records`). No backend or account required — data stays on the device/browser you use.
+Records are stored in browser `localStorage` (key: `eqe_charging_records`). JSON export/import remains available as a backup. Optional private sync lets devices share the same records through a separate Cloudflare Worker and D1 database. The pairing key stays in each device's browser storage; it is never checked into this repository.
+
+### Set up optional cross-device sync
+
+1. The dedicated Cloudflare D1 database and Worker are deployed at `https://eqe-charging-sync.dk0986.workers.dev`.
+2. On the dashboard, open **同步設定**, generate a pairing key, and save it. Keep a private copy of that key. Tap **同步** once on the device containing the complete records to upload them.
+3. On another device, enter the same key and tap **同步** to download. Keep a JSON export before first pairing if that device already has records. Tap **同步** after changes to upload or download. If both devices changed records, sync stops and asks you to resolve the conflict using backups.
+
+The local PC server in `server.py` still reads the newest JSON from `D:\AI application code\EQE` when cloud sync is not configured. Once a pairing key is saved on that PC, the local raw folder is no longer loaded automatically, to prevent an older export replacing cloud records.
 
 ## Running
 

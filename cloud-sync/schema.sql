@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS charging_sync (account_id TEXT PRIMARY KEY, records_json TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);

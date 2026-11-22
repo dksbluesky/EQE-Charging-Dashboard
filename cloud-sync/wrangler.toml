@@ -1,0 +1,11 @@
+name = "eqe-charging-sync"
+main = "worker.mjs"
+compatibility_date = "2026-11-22"
+
+[vars]
+DEV_ORIGIN = "http://127.0.0.1:8744"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "eqe-charging-sync"
+database_id = "5b441804-259c-429f-bfa2-52da69f5d9ce"
