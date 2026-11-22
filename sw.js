@@ -1,8 +1,7 @@
-const CACHE_NAME = 'eqe-charging-v3';
+const CACHE_NAME = 'eqe-charging-v4';
 const ASSETS = [
   './',
   './index.html',
-  './seed-data.js',
   './sync.js',
   './manifest.json',
   './icon-192.png',
